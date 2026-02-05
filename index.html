@@ -3,142 +3,156 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Small Loan Dodge</title>
+    <title>3D Small Loan Dodge</title>
     <style>
-        body { margin: 0; background-color: #222; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; font-family: sans-serif; }
-        #game-container { position: relative; }
-        canvas { border: 4px solid #444; background-color: #333; cursor: crosshair; }
+        body { margin: 0; background-color: #000; overflow: hidden; font-family: sans-serif; }
         #overlay {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.8); display: flex; flex-direction: column;
-            justify-content: center; align-items: center; color: white; text-align: center;
+            justify-content: center; align-items: center; color: white; z-index: 10;
+        }
+        #score-ui {
+            position: absolute; top: 20px; left: 20px; color: gold; font-size: 30px;
+            font-weight: bold; pointer-events: none; z-index: 5; text-shadow: 2px 2px #000;
         }
         button { padding: 15px 30px; font-size: 20px; cursor: pointer; background: #3498db; color: white; border: none; border-radius: 5px; }
     </style>
 </head>
 <body>
 
-<div id="game-container">
-    <canvas id="gameCanvas"></canvas>
-    <div id="overlay">
-        <h1>SMALL LOAN DODGE</h1>
-        <p>Use Arrow Keys to move</p>
-        <button onclick="startGame()">CLICK TO START</button>
-    </div>
+<div id="score-ui">Score: 0</div>
+<div id="overlay">
+    <h1>3D LOAN DODGER</h1>
+    <p>Use Arrow Keys to move the Blue Cube</p>
+    <button onclick="startGame()">START GAME</button>
 </div>
 
-<script>
-    const canvas = document.getElementById("gameCanvas");
-    const ctx = canvas.getContext("2d");
-    const overlay = document.getElementById("overlay");
-    canvas.width = 400;
-    canvas.height = 600;
-    
-    let score = 0;
-    let enemyFrequency = 0.02;
-    let gameRunning = false;
-    const enemies = [];
+<script type="importmap">
+    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
 
-    // Audio Setup
-    // Note: Using a common meme sound effect link. 
+<script type="module">
+    import * as THREE from 'three';
+
+    let scene, camera, renderer, player, score = 0;
+    let gameRunning = false;
+    let enemies = [];
+    let enemyFrequency = 0.02;
     const loanSound = new Audio("https://www.myinstants.com/media/sounds/small-loan-of-a-million-dollars.mp3");
 
-    // Image Setup
-    const trumpImg = new Image();
-    let imgLoaded = false;
-    trumpImg.src = "https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Donald_Trump_official_portrait.jpg/120px-Donald_Trump_official_portrait.jpg";
-    trumpImg.onload = () => { imgLoaded = true; };
+    // Initialize Scene
+    function init() {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x111111);
+        
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 5, 10);
+        camera.lookAt(0, 0, -5);
 
-    const player = { x: 180, y: 540, size: 40, speed: 8 };
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Lights
+        const light = new THREE.DirectionalLight(0xffffff, 1);
+        light.position.set(5, 10, 7.5);
+        scene.add(light);
+        scene.add(new THREE.AmbientLight(0x404040));
+
+        // Floor
+        const floorGeo = new THREE.PlaneGeometry(10, 100);
+        const floorMat = new THREE.MeshPhongMaterial({ color: 0x222222 });
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
+
+        // Player Cube
+        const playerGeo = new THREE.BoxGeometry(1, 1, 1);
+        const playerMat = new THREE.MeshPhongMaterial({ color: 0x3498db });
+        player = new THREE.Mesh(playerGeo, playerMat);
+        player.position.y = 0.5;
+        scene.add(player);
+    }
+
+    // Input Handling
     const keys = {};
-    window.addEventListener("keydown", (e) => keys[e.code] = true);
-    window.addEventListener("keyup", (e) => keys[e.code] = false);
+    window.addEventListener('keydown', (e) => keys[e.code] = true);
+    window.addEventListener('keyup', (e) => keys[e.code] = false);
 
-    function startGame() {
-        overlay.style.display = "none";
-        gameRunning = true;
-        // Play sound briefly and mute to "unlock" audio for the browser
-        loanSound.play().then(() => {
-            loanSound.pause();
-            loanSound.currentTime = 0;
-        });
-        resetGame();
-        gameLoop();
-    }
+    const textureLoader = new THREE.TextureLoader();
+    const trumpTex = textureLoader.load('https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Donald_Trump_official_portrait.jpg/120px-Donald_Trump_official_portrait.jpg');
 
-    function resetGame() {
-        score = 0;
-        enemies.length = 0;
-        enemyFrequency = 0.02;
-    }
-
-    function update() {
-        if (!gameRunning) return;
-
-        if (keys["ArrowLeft"] && player.x > 0) player.x -= player.speed;
-        if (keys["ArrowRight"] && player.x < canvas.width - player.size) player.x += player.speed;
-
+    function spawnEnemy() {
         if (Math.random() < enemyFrequency) {
-            enemies.push({ x: Math.random() * 350, y: -60, w: 50, h: 60, speed: 3 + Math.random() * 4, playedSound: false });
+            const geo = new THREE.BoxGeometry(1.2, 1.5, 0.5);
+            // Front face gets the texture, others are red
+            const mats = [
+                new THREE.MeshPhongMaterial({color: 0xff0000}), // right
+                new THREE.MeshPhongMaterial({color: 0xff0000}), // left
+                new THREE.MeshPhongMaterial({color: 0xff0000}), // top
+                new THREE.MeshPhongMaterial({color: 0xff0000}), // bottom
+                new THREE.MeshPhongMaterial({map: trumpTex}),  // front
+                new THREE.MeshPhongMaterial({color: 0xff0000}), // back
+            ];
+            const enemy = new THREE.Mesh(geo, mats);
+            enemy.position.set((Math.random() - 0.5) * 8, 0.75, -50);
+            scene.add(enemy);
+            enemies.push({ mesh: enemy, playedSound: false });
+            
+            // Comedic sound logic
+            const soundClone = loanSound.cloneNode();
+            soundClone.volume = 0.5;
+            soundClone.play();
         }
+    }
 
+    function animate() {
+        if (!gameRunning) return;
+        requestAnimationFrame(animate);
+
+        // Player Move
+        if (keys['ArrowLeft'] && player.position.x > -4.5) player.position.x -= 0.15;
+        if (keys['ArrowRight'] && player.position.x < 4.5) player.position.x += 0.15;
+
+        // Enemy Update
         for (let i = enemies.length - 1; i >= 0; i--) {
-            let e = enemies[i];
-            e.y += e.speed;
+            enemies[i].mesh.position.z += 0.3;
 
-            // Trigger sound when he starts falling (only once per instance)
-            if (!e.playedSound && e.y > -10) {
-                const soundClone = loanSound.cloneNode(); // Clone allows multiple sounds to overlap
-                soundClone.play();
-                e.playedSound = true;
+            // Collision Detection
+            const box1 = new THREE.Box3().setFromObject(player);
+            const box2 = new THREE.Box3().setFromObject(enemies[i].mesh);
+            if (box1.intersectsBox(box2)) {
+                gameOver();
             }
 
-            // Collision
-            if (player.x < e.x + e.w - 10 && player.x + player.size > e.x + 10 &&
-                player.y < e.y + e.h - 10 && player.y + player.size > e.y + 10) {
-                gameRunning = false;
-                overlay.innerHTML = `<h1>GAME OVER</h1><p>Final Score: ${score}</p><button onclick="startGame()">RETRY</button>`;
-                overlay.style.display = "flex";
-            }
-
-            if (e.y > canvas.height) {
+            // Cleanup
+            if (enemies[i].mesh.position.z > 10) {
+                scene.remove(enemies[i].mesh);
                 enemies.splice(i, 1);
                 score++;
-                enemyFrequency += 0.0002; // Speeds up the chaos
+                document.getElementById('score-ui').innerText = `Score: ${score}`;
+                enemyFrequency += 0.0002;
             }
         }
+
+        spawnEnemy();
+        renderer.render(scene, camera);
     }
 
-    function draw() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // Player
-        ctx.fillStyle = "#3498db";
-        ctx.fillRect(player.x, player.y, player.size, player.size);
-
-        // Enemies
-        enemies.forEach(e => {
-            if (imgLoaded) {
-                ctx.drawImage(trumpImg, e.x, e.y, e.w, e.h);
-            } else {
-                ctx.fillStyle = "red";
-                ctx.fillRect(e.x, e.y, e.w, e.h);
-            }
-        });
-
-        // Score
-        ctx.fillStyle = "white";
-        ctx.font = "bold 24px Arial";
-        ctx.fillText(`Score: ${score}`, 20, 40);
+    function gameOver() {
+        gameRunning = false;
+        document.getElementById('overlay').style.display = 'flex';
+        document.getElementById('overlay').innerHTML = `<h1>YOU GOT BANKRUPTED</h1><p>Score: ${score}</p><button onclick="location.reload()">RETRY</button>`;
     }
 
-    function gameLoop() {
-        if (gameRunning) {
-            update();
-            draw();
-            requestAnimationFrame(gameLoop);
-        }
-    }
+    window.startGame = () => {
+        document.getElementById('overlay').style.display = 'none';
+        gameRunning = true;
+        animate();
+    };
+
+    init();
+    renderer.render(scene, camera); // Initial render
 </script>
 </body>
 </html>
