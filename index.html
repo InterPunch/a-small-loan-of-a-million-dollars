@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Small Loan Dodge</title>
+    <style>
+        body { margin: 0; background-color: #222; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; font-family: sans-serif; }
+        #game-container { position: relative; }
+        canvas { border: 4px solid #444; background-color: #333; cursor: crosshair; }
+        #overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); display: flex; flex-direction: column;
+            justify-content: center; align-items: center; color: white; text-align: center;
+        }
+        button { padding: 15px 30px; font-size: 20px; cursor: pointer; background: #3498db; color: white; border: none; border-radius: 5px; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+    <div id="overlay">
+        <h1>SMALL LOAN DODGE</h1>
+        <p>Use Arrow Keys to move</p>
+        <button onclick="startGame()">CLICK TO START</button>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    const overlay = document.getElementById("overlay");
+    canvas.width = 400;
+    canvas.height = 600;
+    
+    let score = 0;
+    let enemyFrequency = 0.02;
+    let gameRunning = false;
+    const enemies = [];
+
+    // Audio Setup
+    // Note: Using a common meme sound effect link. 
+    const loanSound = new Audio("https://www.myinstants.com/media/sounds/small-loan-of-a-million-dollars.mp3");
+
+    // Image Setup
+    const trumpImg = new Image();
+    let imgLoaded = false;
+    trumpImg.src = "https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Donald_Trump_official_portrait.jpg/120px-Donald_Trump_official_portrait.jpg";
+    trumpImg.onload = () => { imgLoaded = true; };
+
+    const player = { x: 180, y: 540, size: 40, speed: 8 };
+    const keys = {};
+    window.addEventListener("keydown", (e) => keys[e.code] = true);
+    window.addEventListener("keyup", (e) => keys[e.code] = false);
+
+    function startGame() {
+        overlay.style.display = "none";
+        gameRunning = true;
+        // Play sound briefly and mute to "unlock" audio for the browser
+        loanSound.play().then(() => {
+            loanSound.pause();
+            loanSound.currentTime = 0;
+        });
+        resetGame();
+        gameLoop();
+    }
+
+    function resetGame() {
+        score = 0;
+        enemies.length = 0;
+        enemyFrequency = 0.02;
+    }
+
+    function update() {
+        if (!gameRunning) return;
+
+        if (keys["ArrowLeft"] && player.x > 0) player.x -= player.speed;
+        if (keys["ArrowRight"] && player.x < canvas.width - player.size) player.x += player.speed;
+
+        if (Math.random() < enemyFrequency) {
+            enemies.push({ x: Math.random() * 350, y: -60, w: 50, h: 60, speed: 3 + Math.random() * 4, playedSound: false });
+        }
+
+        for (let i = enemies.length - 1; i >= 0; i--) {
+            let e = enemies[i];
+            e.y += e.speed;
+
+            // Trigger sound when he starts falling (only once per instance)
+            if (!e.playedSound && e.y > -10) {
+                const soundClone = loanSound.cloneNode(); // Clone allows multiple sounds to overlap
+                soundClone.play();
+                e.playedSound = true;
+            }
+
+            // Collision
+            if (player.x < e.x + e.w - 10 && player.x + player.size > e.x + 10 &&
+                player.y < e.y + e.h - 10 && player.y + player.size > e.y + 10) {
+                gameRunning = false;
+                overlay.innerHTML = `<h1>GAME OVER</h1><p>Final Score: ${score}</p><button onclick="startGame()">RETRY</button>`;
+                overlay.style.display = "flex";
+            }
+
+            if (e.y > canvas.height) {
+                enemies.splice(i, 1);
+                score++;
+                enemyFrequency += 0.0002; // Speeds up the chaos
+            }
+        }
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Player
+        ctx.fillStyle = "#3498db";
+        ctx.fillRect(player.x, player.y, player.size, player.size);
+
+        // Enemies
+        enemies.forEach(e => {
+            if (imgLoaded) {
+                ctx.drawImage(trumpImg, e.x, e.y, e.w, e.h);
+            } else {
+                ctx.fillStyle = "red";
+                ctx.fillRect(e.x, e.y, e.w, e.h);
+            }
+        });
+
+        // Score
+        ctx.fillStyle = "white";
+        ctx.font = "bold 24px Arial";
+        ctx.fillText(`Score: ${score}`, 20, 40);
+    }
+
+    function gameLoop() {
+        if (gameRunning) {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+    }
+</script>
+</body>
+</html>
